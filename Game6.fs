@@ -1,4 +1,4 @@
-namespace MonoGame005
+namespace MonoGame006
 
 open Microsoft.Xna.Framework
 open Microsoft.Xna.Framework.Graphics
@@ -361,7 +361,7 @@ module Collision =
         TileLayer.getBroadphaseTiles map tileSet min max
         |> List.choose(fun (tileId, tileaabb, x, y) -> innerCollide map rigidBody tileaabb tileId dt x y)
 
-type Game5 () as this =
+type Game6 () as this =
     inherit Game()
 
     let graphics = new GraphicsDeviceManager(this, PreferredBackBufferWidth = 1920, PreferredBackBufferHeight = 1080)
