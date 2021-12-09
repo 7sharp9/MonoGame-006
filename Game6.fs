@@ -5,6 +5,7 @@ open Microsoft.Xna.Framework.Graphics
 open Microsoft.Xna.Framework.Input
 open System
 open MonoGame.Extended
+open System.Collections.Generic
 
 type AABB =
     { halfExtents: Vector2
@@ -361,6 +362,106 @@ module Collision =
         TileLayer.getBroadphaseTiles map tileSet min max
         |> List.choose(fun (tileId, tileaabb, x, y) -> innerCollide map rigidBody tileaabb tileId dt x y)
 
+type BehaviourTreeStatus =
+    | Success
+    | Failure
+    | Running
+    
+type TimeData = float32
+    
+type IBehaviourTreeNode =
+    abstract Tick : TimeData -> BehaviourTreeStatus
+
+type IParentBehaviourTreeNode =
+    inherit IBehaviourTreeNode
+    abstract AddChild : IBehaviourTreeNode -> unit
+    
+type ActionNode(name: string, action: TimeData -> BehaviourTreeStatus) =
+    interface IBehaviourTreeNode with
+         member x.Tick time =
+             action time
+             
+type InverterNode(name: string) =
+    let mutable childNode: IBehaviourTreeNode option = None
+    interface IParentBehaviourTreeNode with
+        member x.Tick time =
+            match childNode with
+            | Some(child) ->
+                let result = child.Tick time
+                match result with
+                | Success -> Failure
+                | Failure -> Success
+                | running -> running
+            | None -> failwith "No child node"
+
+        member this.AddChild(child) =
+            match childNode with
+            | None -> childNode <- Some child
+            | Some _ -> failwithf "Inverter cant have more than one child"
+            
+module Seq =
+    let mapUntil pred map (xs : _ seq) = seq{
+        use en = xs.GetEnumerator()
+        let mutable flag = true
+        while not flag && en.MoveNext() do
+            let result = map en.Current
+            flag <- not (pred result)
+            yield result }
+            
+type SequenceNode(name: string) =
+    let children: IBehaviourTreeNode list = List.empty
+    interface IParentBehaviourTreeNode with
+        member x.Tick time =
+            let result = 
+                children |> Seq.mapUntil (fun item -> match item with
+                                                      | Failure | Running -> true
+                                                      | Success -> false) (fun item -> item.Tick time)
+            Success
+
+                
+
+        member this.AddChild(child) = ()
+            
+            
+             
+type BehaviourTreeBuilder() =
+    let mutable currentNode : IBehaviourTreeNode option = None
+    member val ParentNodeStack = Stack<IParentBehaviourTreeNode>() with get,set
+    
+type doAction = TimeData -> BehaviourTreeStatus
+
+module BehaviourTreeBuilder =
+    let doAction (name: string) (action: doAction) (node: BehaviourTreeBuilder) =
+        if node.ParentNodeStack.Count <= 0 then
+            failwithf "Cant create an unnested action, you need a leaf node"
+        else
+            let action = ActionNode(name, action)
+            node.ParentNodeStack.Peek().AddChild(action)
+        node
+        
+    let condition name (conditional: TimeData -> bool) (node: BehaviourTreeBuilder) =
+        doAction name (fun time -> if conditional time then Success else Failure) node
+        
+    let inverter name (node: BehaviourTreeBuilder) =
+        let inverter = InverterNode(name)
+        if node.ParentNodeStack.Count > 0 then
+            node.ParentNodeStack.Peek().AddChild inverter
+        
+        node.ParentNodeStack.Push inverter
+        node
+        
+    let sequence name (node: BehaviourTreeBuilder) =
+        let sequenceNode = SequenceNode(name)
+
+        if node.ParentNodeStack.Count > 0 then
+            node.ParentNodeStack.Peek().AddChild(sequenceNode)
+            
+        node.ParentNodeStack.Push(sequenceNode)
+        node
+
+
+
+    
 type Game6 () as this =
     inherit Game()
 
